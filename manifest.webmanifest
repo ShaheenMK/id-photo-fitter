@@ -1,0 +1,16 @@
+{
+  "name": "ID Photo Fitter",
+  "short_name": "ID Photo",
+  "description": "Crop, clean up and resize photos for Emirates ID, Daman, passport and visa uploads. Works offline. Photos never leave your device.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#eef1f5",
+  "theme_color": "#0b7a5a",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}
