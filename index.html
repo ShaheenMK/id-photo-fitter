@@ -45,6 +45,8 @@ button{font:inherit;cursor:pointer}
 .btn.ghost.on{background:var(--accent);color:var(--accent-ink)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.dropzone{outline:3px dashed #0b7a5a;outline-offset:-8px;background:rgba(11,122,90,.07)}
+.dropnote{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:90;background:#0b7a5a;color:#fff;padding:10px 18px;border-radius:999px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.25)}
 .work{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;background:rgba(15,25,35,.62);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);color:#fff;font-weight:600;font-size:16px}
 .work .spin{width:56px;height:56px;border-radius:50%;border:6px solid rgba(255,255,255,.28);border-top-color:#fff;animation:wspin 0.9s linear infinite}
 .work .sub{font-weight:400;font-size:13px;opacity:.8}
@@ -132,7 +134,7 @@ details li{margin-bottom:5px}
         <div class="sub" id="worksub"></div>
       </div>
       <div class="empty" id="empty">
-        <p>Pick a clear photo with your face straight to the camera.</p>
+        <p>Pick a clear photo with your face straight to the camera. You can also drag a photo here, or paste one with Ctrl+V.</p>
         <button class="btn" id="pick">Choose photo</button>
       </div>
     </div>
@@ -6411,6 +6413,25 @@ function fxStamp(cx, cy, r) {
 })();
 
 sizeView();
+
+// Drag and drop / paste a photo anywhere on the page
+(function () {
+  let depth = 0, note = null;
+  const isFiles = e => e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0;
+  const off = () => { depth = 0; document.body.classList.remove('dropzone'); if (note) { note.remove(); note = null; } };
+  window.addEventListener('dragenter', e => { if (!isFiles(e)) return; e.preventDefault(); depth++; document.body.classList.add('dropzone'); if (!note) { note = document.createElement('div'); note.className = 'dropnote'; note.textContent = 'Drop the photo to open it'; document.body.appendChild(note); } });
+  window.addEventListener('dragover', e => { if (isFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  window.addEventListener('dragleave', e => { if (!isFiles(e)) return; depth = Math.max(0, depth - 1); if (!depth) off(); });
+  window.addEventListener('drop', e => {
+    if (!isFiles(e)) return; e.preventDefault(); off();
+    const f = Array.prototype.find.call(e.dataTransfer.files || [], x => /^image\//.test(x.type) || /\.(jpe?g|png|webp|heic|heif|bmp|gif)$/i.test(x.name));
+    if (f) loadFile(f); else { const m = document.getElementById('msg'); if (m) m.textContent = 'That file is not a photo. Drop a JPG or PNG.'; }
+  });
+  window.addEventListener('paste', e => {
+    const items = (e.clipboardData && e.clipboardData.items) || [];
+    for (const it of items) if (it.kind === 'file' && /^image\//.test(it.type)) { const f = it.getAsFile(); if (f) { e.preventDefault(); loadFile(f); return; } }
+  });
+})();
 
 // Big progress overlay for the slow steps (AI restore, detailed cut-out, model downloads)
 (function () {

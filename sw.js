@@ -1,5 +1,5 @@
 // Offline cache for ID Photo Fitter. Bump VERSION when index.html changes.
-const VERSION = 'idphoto-v7';
+const VERSION = 'idphoto-v8';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
