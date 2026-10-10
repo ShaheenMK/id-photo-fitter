@@ -45,6 +45,14 @@ button{font:inherit;cursor:pointer}
 .btn.ghost.on{background:var(--accent);color:var(--accent-ink)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 button:focus-visible,select:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.work{position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;background:rgba(15,25,35,.62);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);color:#fff;font-weight:600;font-size:16px}
+.work .spin{width:56px;height:56px;border-radius:50%;border:6px solid rgba(255,255,255,.28);border-top-color:#fff;animation:wspin 0.9s linear infinite}
+.work .sub{font-weight:400;font-size:13px;opacity:.8}
+.work .bar{width:min(260px,70%);height:6px;border-radius:3px;background:rgba(255,255,255,.28);overflow:hidden}
+.work .bar i{display:block;height:100%;width:40%;border-radius:3px;background:#fff;animation:wbar 1.3s ease-in-out infinite}
+@keyframes wspin{to{transform:rotate(360deg)}}
+@keyframes wbar{0%{transform:translateX(-110%)}100%{transform:translateX(280%)}}
+@media (prefers-reduced-motion:reduce){.work .spin,.work .bar i{animation-duration:3s}}
 .frame{position:relative;width:100%;border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#fff}
 .frame canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
 .empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:20px;text-align:center;background:var(--card)}
@@ -117,6 +125,12 @@ details li{margin-bottom:5px}
   <div class="card">
     <div class="frame" id="frame">
       <canvas id="view"></canvas>
+      <div class="work hidden" id="work" role="status" aria-live="polite">
+        <div class="spin"></div>
+        <div id="workmsg">Working...</div>
+        <div class="bar"><i></i></div>
+        <div class="sub" id="worksub"></div>
+      </div>
       <div class="empty" id="empty">
         <p>Pick a clear photo with your face straight to the camera.</p>
         <button class="btn" id="pick">Choose photo</button>
@@ -5546,7 +5560,7 @@ async function bigInit(onStatus) {
       if (location.protocol.indexOf('http') !== 0) throw new Error('not served over http');
       if (!window.ort) await bigLoadScript('ort/ort.wasm.min.js');
       ort.env.wasm.wasmPaths = new URL('ort/', location.href).href;
-      ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = false;
+      ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = true;
       const resp = await fetch('models/isnet_medium.onnx');
       if (!resp.ok) throw new Error('model missing');
       const total = +resp.headers.get('content-length') || 88188479, parts = []; let got = 0;
@@ -5593,7 +5607,7 @@ async function srInit(onStatus) {
     try {
       if (location.protocol.indexOf('http') !== 0) throw new Error('not served over http');
       if (!window.ort) await bigLoadScript('ort/ort.wasm.min.js');
-      ort.env.wasm.wasmPaths = new URL('ort/', location.href).href; ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = false;
+      ort.env.wasm.wasmPaths = new URL('ort/', location.href).href; ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = true;
       onStatus && onStatus('Loading the AI restore model (first time only)...');
       const resp = await fetch('models/sr_x4v3.onnx'); if (!resp.ok) throw new Error('model missing');
       SR.sess = await ort.InferenceSession.create(await resp.arrayBuffer(), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
@@ -6397,6 +6411,19 @@ function fxStamp(cx, cy, r) {
 })();
 
 sizeView();
+
+// Big progress overlay for the slow steps (AI restore, detailed cut-out, model downloads)
+(function () {
+  const busy = document.getElementById('busy'), box = document.getElementById('work'), msg = document.getElementById('workmsg'), sub = document.getElementById('worksub');
+  let t0 = 0, timer = null;
+  const tick = () => { const sec = Math.round((Date.now() - t0) / 1000); sub.textContent = sec + ' s. Please keep this page open.'; };
+  const show = text => { if (box.classList.contains('hidden')) { t0 = Date.now(); timer = setInterval(tick, 1000); tick(); box.classList.remove('hidden'); } msg.textContent = text; };
+  const hide = () => { if (!box.classList.contains('hidden')) { box.classList.add('hidden'); clearInterval(timer); timer = null; } };
+  new MutationObserver(() => {
+    const t = (busy.textContent || '').trim();
+    if (/AI restore|detail|Loading the|Starting the|model/i.test(t)) show(t); else if (!t) hide();
+  }).observe(busy, { childList: true, characterData: true, subtree: true });
+})();
 </script>
 </body>
 </html>
