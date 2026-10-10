@@ -1,5 +1,7 @@
 # ID Photo Fitter
 
+**Open the app: https://shaheenmk.github.io/id-photo-fitter/**
+
 Fixes photos for Emirates ID, Daman, passport and visa uploads: exact size, KB limit, white background, centring, lighting, de-blur.
 Everything runs in your browser on your own device. Photos are never uploaded.
 
