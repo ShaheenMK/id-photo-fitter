@@ -183,7 +183,7 @@ details li{margin-bottom:5px}
         <div class="hint">Raise it if a thin dark outline remains. Lower it if hair or shoulders get nibbled.</div>
       </div>
       <div id="aiRow" class="hidden">
-        <label class="check"><input type="checkbox" id="aires"> AI restore (clearer, keeps her likeness)</label>
+        <label class="check"><input type="checkbox" id="aires" checked> AI restore (clearer, keeps her likeness)</label>
         <div class="hint">Rebuilds a small or soft photo to look cleaner and sharper, then blends it with your original so the face stays true. Takes 10 to 40 seconds. If it looks too smooth, untick it or use hold-to-compare.</div>
       </div>
       <label class="check"><input type="checkbox" id="hair" checked> Keep fine hair strands</label>
@@ -5641,7 +5641,7 @@ async function srRestore(bmp, mix, onStatus) {
   return await createImageBitmap(big);
 }
 async function ensureAI(seq) {
-  const want = $('aires').checked && S.bmpOrig;
+  const want = $('aires').checked && !$('aiRow').classList.contains('hidden') && S.bmpOrig;
   if (want && !S.aiOn) {
     if (!S.aiBmp || S.aiFor !== S.bmpOrig) {
       $('busy').textContent = 'Starting AI restore...';
@@ -5869,8 +5869,10 @@ $('zoom').addEventListener('input', e => setZoom(parseFloat(e.target.value)));
 $('bright').addEventListener('input', e => { $('bv').textContent = parseFloat(e.target.value).toFixed(2); schedule(); });
 $('autolight').addEventListener('change', schedule);
 $('hair').addEventListener('change', schedule);
-$('aires').addEventListener('change', () => { S.aiFailed = false; renderView(); schedule(); });
-if (location.protocol.indexOf('http') === 0) fetch('models/sr_x4v3.onnx', { method: 'HEAD' }).then(r => { if (r.ok) $('aiRow').classList.remove('hidden'); }).catch(() => {});
+$('aires').addEventListener('change', () => { S.aiFailed = false; try { localStorage.setItem('idphoto-aires', $('aires').checked ? '1' : '0'); } catch (e) {} renderView(); schedule(); });
+try { if (localStorage.getItem('idphoto-aires') === '0') $('aires').checked = false; } catch (e) {}
+if (location.protocol.indexOf('http') === 0) fetch('models/sr_x4v3.onnx', { method: 'HEAD' }).then(r => { if (r.ok) $('aiRow').classList.remove('hidden'); else $('aires').checked = false; }).catch(() => { $('aires').checked = false; });
+else $('aires').checked = false;
 $('deblur').addEventListener('change', schedule);
 $('sharp').addEventListener('input', e => { $('sv').textContent = e.target.value + '%'; schedule(); });
 $('whiten').addEventListener('change', e => { $('tolBox').classList.toggle('hidden', !e.target.checked); schedule(); });
