@@ -5593,8 +5593,20 @@ async function bigAlpha(c, W, H) {
   for (let k = 0; k < W * H; k++) m[k] = r[k * 4] / 255;
   return m;
 }
+// grey-scale closing (dilate then erode): fills notches and holes in the silhouette that are narrower than about 2r
+function morphPass(src, W, H, r, isMax) {
+  const tmp = new Float32Array(W * H), out = new Float32Array(W * H), init = isMax ? -1 : 2;
+  for (let y = 0; y < H; y++) { const o = y * W;
+    for (let x = 0; x < W; x++) { let v = init; const a = Math.max(0, x - r), b = Math.min(W - 1, x + r);
+      for (let i = a; i <= b; i++) { const p = src[o + i]; if (isMax ? p > v : p < v) v = p; } tmp[o + x] = v; } }
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) { let v = init; const a = Math.max(0, y - r), b = Math.min(H - 1, y + r);
+      for (let j = a; j <= b; j++) { const p = tmp[j * W + x]; if (isMax ? p > v : p < v) v = p; } out[y * W + x] = v; } }
+  return out;
+}
+function closeMatte(m, W, H, r) { return morphPass(morphPass(m, W, H, r, true), W, H, r, false); }
 function bigMatte(a, trim) {
-  const lo = window.BIGLO != null ? window.BIGLO : 0.25 + 0.30 * trim, hi = window.BIGHI || 0.95, out = new Float32Array(a.length);
+  const lo = window.BIGLO != null ? window.BIGLO : 0.22 + 0.30 * trim, hi = window.BIGHI || 0.82, out = new Float32Array(a.length);
   for (let k = 0; k < a.length; k++) { const t = Math.max(0, Math.min(1, (a[k] - lo) / (hi - lo))); out[k] = t * t * (3 - 2 * t); }
   return out;
 }
@@ -6267,7 +6279,11 @@ async function build() {
         S.baseMatte = bigMatte(bigA, trim);
         const sm2 = (a, b, x) => { const u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
         for (let k = 0; k < bigA.length; k++) {            // fill holes (for example a bright uniform) where the two models agree it is a person
-          if (bigA[k] > 0.05 && mask[k] > 0.55) { const v = sm2(0.55, 0.85, mask[k]) * sm2(0.05, 0.25, bigA[k]); if (v > S.baseMatte[k]) S.baseMatte[k] = v; }
+          if (bigA[k] > 0.15 && mask[k] > 0.55) { const v = sm2(0.55, 0.85, mask[k]) * sm2(0.15, 0.4, bigA[k]); if (v > S.baseMatte[k]) S.baseMatte[k] = v; }
+        }
+        {                                                  // close notches in the outline (for example a bright scarf that is nearly the same colour as the wall)
+          const cl = boxBlur(closeMatte(S.baseMatte, t.w, t.h, Math.max(6, Math.round(t.w * 0.02))), t.w, t.h, 2);
+          for (let k = 0; k < cl.length; k++) if (cl[k] > S.baseMatte[k] && bigA[k] > 0.2) S.baseMatte[k] = cl[k];
         }
       }
       else {
