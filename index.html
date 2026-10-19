@@ -5713,19 +5713,20 @@ function sourceFor(s) {
   return { img: cur, k: cur.width / S.bmp.width };
 }
 
-function drawImage(ctx, cw, ch) {
-  ctx.fillStyle = '#fff';
+function drawImage(ctx, cw, ch, f, fill) {
+  f = f || 1;
+  ctx.fillStyle = fill || '#fff';
   ctx.fillRect(0, 0, cw, ch);
   if (!S.bmp) return;
   const r = S.rot % 2;
   const iw = r ? S.bmp.height : S.bmp.width;
   const ih = r ? S.bmp.width : S.bmp.height;
-  const s = Math.max(cw / iw, ch / ih) * S.zoom;
+  const s = Math.max(cw / iw, ch / ih) * S.zoom * f;
   const src = sourceFor(s);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.save();
-  ctx.translate(cw / 2 + S.ox * cw, ch / 2 + S.oy * ch);
+  ctx.translate(cw / 2 + S.ox * cw * f, ch / 2 + S.oy * ch * f);
   ctx.rotate(S.rot * Math.PI / 2 + S.tilt * Math.PI / 180);
   ctx.scale(s / src.k, s / src.k);
   ctx.drawImage(src.img, -src.img.width / 2, -src.img.height / 2);
@@ -6247,7 +6248,31 @@ async function build() {
           if (await bigInit(t => { $('busy').textContent = t; })) {
             $('busy').textContent = 'Cutting out the background in detail (this can take a little while)...';
             await new Promise(r => setTimeout(r, 30));
-            try { S.bigCache = { key, a: await bigAlpha(c, t.w, t.h) }; } catch (e) { BIG.state = 'failed'; BIG.err = String(e && e.message || e); S.bigCache = null; }
+            try {
+              let ba = await bigAlpha(c, t.w, t.h);
+              // close-up crops hide the shoulders, so a white scarf looks like the wall: also look at a wider view and keep what it finds
+              let mc = 0; for (let k = 0; k < mask.length; k += 7) if (mask[k] > 0.5) mc++;
+              if (ba && mc / Math.ceil(mask.length / 7) > 0.5) {
+                const F = 0.5, wc = document.createElement('canvas'); wc.width = t.w; wc.height = t.h;
+                drawImage(wc.getContext('2d', { willReadFrequently: true }), t.w, t.h, F, '#d8d8d8');
+                $('busy').textContent = 'Checking the wider view for the scarf and shoulders...';
+                await new Promise(r => setTimeout(r, 30));
+                const wa = await bigAlpha(wc, t.w, t.h), W = t.w, H = t.h;
+                if (wa) {
+                  const q = (a, b, x) => { const u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+                  for (let y = 0; y < H; y++) {
+                    const fy = H / 2 + (y - H / 2) * F, y0 = Math.max(0, Math.min(H - 2, Math.floor(fy))), ty = fy - y0;
+                    for (let x = 0; x < W; x++) {
+                      const fx = W / 2 + (x - W / 2) * F, x0 = Math.max(0, Math.min(W - 2, Math.floor(fx))), tx = fx - x0, i = y0 * W + x0;
+                      const v = (wa[i] * (1 - tx) + wa[i + 1] * tx) * (1 - ty) + (wa[i + W] * (1 - tx) + wa[i + W + 1] * tx) * ty;
+                      const w2 = q(0.3, 0.8, v), k = y * W + x;
+                      if (w2 > ba[k]) ba[k] = w2;
+                    }
+                  }
+                }
+              }
+              S.bigCache = { key, a: ba };
+            } catch (e) { BIG.state = 'failed'; BIG.err = String(e && e.message || e); S.bigCache = null; }
           }
         }
         if (S.fixKey !== key) { if (S.fix) S.fixCleared = true; S.fix = null; S.fixHist = []; S.fixKey = key; }
@@ -6285,6 +6310,9 @@ async function build() {
           const cl = boxBlur(closeMatte(S.baseMatte, t.w, t.h, Math.max(6, Math.round(t.w * 0.02))), t.w, t.h, 2);
           for (let k = 0; k < cl.length; k++) if (cl[k] > S.baseMatte[k] && bigA[k] > 0.2) S.baseMatte[k] = cl[k];
         }
+        // narrow slits inside the body outline (a shaded scarf fold the model took for wall): close them where the body mask is sure
+        { const cl2 = boxBlur(closeMatte(S.baseMatte, t.w, t.h, Math.max(10, Math.round(t.w * 0.035))), t.w, t.h, 2);
+          for (let k = 0; k < cl2.length; k++) if (cl2[k] > S.baseMatte[k] && mask[k] > 0.7) S.baseMatte[k] = cl2[k]; }
       }
       else {
         S.baseMatte = matte(mask, trim);
