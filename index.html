@@ -6265,8 +6265,8 @@ async function build() {
                     for (let x = 0; x < W; x++) {
                       const fx = W / 2 + (x - W / 2) * F, x0 = Math.max(0, Math.min(W - 2, Math.floor(fx))), tx = fx - x0, i = y0 * W + x0;
                       const v = (wa[i] * (1 - tx) + wa[i + 1] * tx) * (1 - ty) + (wa[i + W] * (1 - tx) + wa[i + W + 1] * tx) * ty;
-                      const w2 = q(0.3, 0.8, v), k = y * W + x;
-                      if (w2 > ba[k]) ba[k] = w2;
+                      const w2 = q(0.4, 0.85, v), k = y * W + x;
+                      if (w2 > ba[k] && mask[k] > 0.25) ba[k] = w2;
                     }
                   }
                 }
@@ -6318,6 +6318,16 @@ async function build() {
         S.baseMatte = matte(mask, trim);
         if ($('hair').checked && t.w * t.h <= 2.5e6) S.baseMatte = hairRescue(d, t.w, t.h, mask, S.baseMatte);
         if (BIG.state === 'failed' && BIG.err && !/script|missing|not served/.test(BIG.err)) S.extra.push({ lvl:'info', txt:'The detailed cut-out model could not run on this device (probably not enough memory), so the built-in one was used.' });
+      }
+      if (bigA) {                                        // thin dark hair against a light wall: make it solid instead of a grey ghost
+        let ws = 0, wn = 0;
+        for (let k = 0, n = t.w * t.h; k < n; k += 11) if (bigA[k] < 0.02) { const i = k * 4; ws += 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; wn++; }
+        const wl = wn ? ws / wn : 0;
+        if (wl > 150) for (let k = 0, n = t.w * t.h; k < n; k++) {
+          const m = S.baseMatte[k]; if (m < 0.04 || m > 0.95 || bigA[k] < 0.06) continue;
+          const i = k * 4, L = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+          if (L < 110) { const est = Math.min(1, (wl - L) / (wl - 50)); if (est > m) S.baseMatte[k] = m + (est - m) * 0.85; }
+        }
       }
       S.checkMatte = S.fix ? applyFix(S.baseMatte, S.fix) : S.baseMatte;
       for (let k = 0, n = t.w * t.h; k < n; k++) {       // soft knee so a white scarf or shirt is not lost in the white background
