@@ -6337,6 +6337,7 @@ async function build() {
           const m = S.baseMatte[k]; if (m < 0.04 || m > 0.95 || bigA[k] < 0.06) continue;
           const i = k * 4, L = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
           if (L < 110) { const est = Math.min(1, (wl - L) / (wl - 50)); if (est > m) S.baseMatte[k] = m + (est - m) * 0.85; }
+          else if (m < 0.9 && L < wl - 30 && Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) < 30) S.baseMatte[k] = m * 0.35;   // grey half-transparent flyaway strands look like a dirty halo
         }
       }
       S.checkMatte = S.fix ? applyFix(S.baseMatte, S.fix) : S.baseMatte;
