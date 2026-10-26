@@ -5862,7 +5862,7 @@ async function autoFit() {
     }
     const frac = (chinY - top) / mh;
     if (top > 0 && frac > 0.15 && frac < 0.95) {
-      const want = sc * 0.80 / frac;
+      const want = sc * 0.76 / frac;
       if (want > lmScale * 0.55 && want < lmScale * 1.6) { place(want); how = 'mask'; }
     }
   } catch (e) {}
