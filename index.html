@@ -6306,6 +6306,16 @@ async function build() {
         for (let k = 0; k < bigA.length; k++) {            // fill holes (for example a bright uniform) where the two models agree it is a person
           if (bigA[k] > 0.15 && mask[k] > 0.55) { const v = sm2(0.55, 0.85, mask[k]) * sm2(0.15, 0.4, bigA[k]); if (v > S.baseMatte[k]) S.baseMatte[k] = v; }
         }
+        {                                                  // dark hair that the detailed model dropped (hanging next to the shoulder): near the body mask and much darker than the wall
+          let ws = 0, wn = 0;
+          for (let k = 0, n = t.w * t.h; k < n; k += 11) if (bigA[k] < 0.02) { const i = k * 4; ws += 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; wn++; }
+          const wl = wn ? ws / wn : 0;
+          if (wl > 150) for (let k = 0, n = t.w * t.h; k < n; k++) {
+            if (S.baseMatte[k] >= 0.6 || mask[k] < 0.2) continue;
+            const i = k * 4, L = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2];
+            if (L < wl - 70) { const v = sm2(0.2, 0.5, mask[k]) * sm2(wl - 70, wl - 120, L); if (v > S.baseMatte[k]) S.baseMatte[k] = v; }
+          }
+        }
         {                                                  // close notches in the outline (for example a bright scarf that is nearly the same colour as the wall)
           const cl = boxBlur(closeMatte(S.baseMatte, t.w, t.h, Math.max(6, Math.round(t.w * 0.02))), t.w, t.h, 2);
           for (let k = 0; k < cl.length; k++) if (cl[k] > S.baseMatte[k] && bigA[k] > 0.2) S.baseMatte[k] = cl[k];
