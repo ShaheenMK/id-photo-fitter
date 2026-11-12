@@ -5857,12 +5857,12 @@ async function autoFit() {
     let top = -1;
     for (let y = 0; y < mh && top < 0; y++) {
       let n = 0;
-      for (let x = Math.round(mw * 0.28); x < Math.round(mw * 0.72); x++) if (q[y * mw + x] > 0.5) n++;
+      for (let x = Math.round(mw * 0.28); x < Math.round(mw * 0.72); x++) if (q[y * mw + x] > 0.22) n++;
       if (n >= 3) top = y;
     }
     const frac = (chinY - top) / mh;
     if (top > 0 && frac > 0.15 && frac < 0.95) {
-      const want = sc * 0.76 / frac;
+      const want = sc * 0.74 / frac;
       if (want > lmScale * 0.55 && want < lmScale * 1.6) { place(want); how = 'mask'; }
     }
   } catch (e) {}
