@@ -193,6 +193,14 @@ details li{margin-bottom:5px}
         <label class="check"><input type="checkbox" id="aires" checked> AI restore (clearer, keeps her likeness)</label>
         <div class="hint">Rebuilds a small or soft photo to look cleaner and sharper, then blends it with your original so the face stays true. Takes 10 to 40 seconds. If it looks too smooth, untick it or use hold-to-compare.</div>
       </div>
+      <div id="gfpRow" class="hidden">
+        <label class="check"><input type="checkbox" id="gfp"> Enhance face with AI (sharper eyes, hair and skin)</label>
+        <div class="slide hidden" id="gfpBox">
+          <div class="top"><span>Enhance strength</span><span id="gfv">60%</span></div>
+          <input id="gfmix" type="range" min="20" max="100" step="10" value="60">
+        </div>
+        <div class="hint">Optional. Downloads a 170 MB face model the first time (then it is kept on your device) and takes a few seconds per photo. It adds fine detail the photo did not clearly show, so keep it at 60% or lower for ID photos so she still looks like herself.</div>
+      </div>
       <label class="check"><input type="checkbox" id="hair" checked> Keep fine hair strands</label>
       <div class="hint">Works best against a plain wall. Turn it off if a halo of the old background shows.</div>
       <div class="tools">
@@ -5715,6 +5723,84 @@ async function ensureAI(seq) {
     else { S.aiFailed = true; $('aires').checked = false; }
   } else if (!want && S.aiOn) { S.bmp = S.bmpOrig; S.aiOn = false; S.maskCache = null; }
 }
+// ---------- Face enhance (GFPGAN v1.4, fp16, runs on this device) ----------
+const GF = { state: 'idle', sess: null, err: '' };
+async function gfInit(onStatus) {
+  if (GF.state === 'ready') return true;
+  if (GF.state === 'failed') return false;
+  if (GF.promise) return GF.promise;
+  GF.promise = (async () => {
+    try {
+      if (location.protocol.indexOf('http') !== 0) throw new Error('not served over http');
+      await ortLoad();
+      const parts = [];
+      for (let i = 0; i < 2; i++) {
+        onStatus && onStatus('Loading the face enhance model (first time only, 170 MB) ' + (i * 50) + '%...');
+        const r = await fetch('models/gfp_part' + i); if (!r.ok) throw new Error('model missing');
+        parts.push(new Uint8Array(await r.arrayBuffer()));
+      }
+      const buf = new Uint8Array(parts[0].length + parts[1].length); buf.set(parts[0], 0); buf.set(parts[1], parts[0].length);
+      onStatus && onStatus('Starting the face enhance model...');
+      GF.sess = await ort.InferenceSession.create(buf.buffer, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+      GF.state = 'ready'; return true;
+    } catch (e) { GF.state = 'failed'; GF.err = String(e && e.message || e); return false; }
+  })();
+  return GF.promise;
+}
+// Finds the largest face, runs it through the model upright at 512x512, blends it back (mix 0..1) with a soft edge. Returns a new ImageBitmap or null (no face).
+async function gfEnhance(bmp, mix, onStatus) {
+  const cap = 1800, k = Math.min(1, cap / Math.max(bmp.width, bmp.height));
+  const W = Math.round(bmp.width * k), H = Math.round(bmp.height * k);
+  const base = document.createElement('canvas'); base.width = W; base.height = H;
+  const bx = base.getContext('2d', { willReadFrequently: true }); bx.imageSmoothingQuality = 'high'; bx.drawImage(bmp, 0, 0, W, H);
+  const det = await faceDetect(base, 416, true);
+  if (det.count < 1 || det.cx == null) return null;
+  const fh = det.h * H, cx = det.cx * W, cy = det.cy * H - 0.04 * fh, side = Math.max(96, fh * 2.1), ang = (det.angle || 0) * Math.PI / 180;
+  const N = 512, cv = document.createElement('canvas'); cv.width = N; cv.height = N;
+  const cc = cv.getContext('2d', { willReadFrequently: true }); cc.imageSmoothingQuality = 'high'; cc.fillStyle = '#fff'; cc.fillRect(0, 0, N, N);
+  cc.translate(N / 2, N / 2); cc.scale(N / side, N / side); cc.rotate(-ang); cc.translate(-cx, -cy); cc.drawImage(base, 0, 0);
+  const px = cc.getImageData(0, 0, N, N).data, plane = N * N, x = new Float32Array(3 * plane);
+  for (let i = 0; i < plane; i++) { x[i] = (px[i * 4] / 255 - 0.5) / 0.5; x[plane + i] = (px[i * 4 + 1] / 255 - 0.5) / 0.5; x[2 * plane + i] = (px[i * 4 + 2] / 255 - 0.5) / 0.5; }
+  onStatus && onStatus('Enhancing the face (a few seconds)...');
+  await new Promise(r => setTimeout(r, 30));
+  const o = (await GF.sess.run({ input: new ort.Tensor('float32', x, [1, 3, N, N]) })).output.data;
+  const id = new ImageData(N, N);
+  for (let i = 0; i < plane; i++) for (let c = 0; c < 3; c++) id.data[i * 4 + c] = Math.max(0, Math.min(255, (o[c * plane + i] * 0.5 + 0.5) * 255)), id.data[i * 4 + 3] = 255;
+  // original face crop at the model's size, then the enhanced one over it at the chosen strength
+  const mx = document.createElement('canvas'); mx.width = N; mx.height = N; const m2 = mx.getContext('2d');
+  m2.putImageData(new ImageData(new Uint8ClampedArray(px), N, N), 0, 0);
+  const en = document.createElement('canvas'); en.width = N; en.height = N; en.getContext('2d').putImageData(id, 0, 0);
+  m2.globalAlpha = mix; m2.drawImage(en, 0, 0); m2.globalAlpha = 1;
+  // soft oval so the patch melts into the rest of the photo
+  m2.globalCompositeOperation = 'destination-in';
+  const g = m2.createRadialGradient(N / 2, N / 2, N * 0.30, N / 2, N / 2, N * 0.5); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  m2.fillStyle = g; m2.fillRect(0, 0, N, N); m2.globalCompositeOperation = 'source-over';
+  const out = document.createElement('canvas'); out.width = W; out.height = H;
+  const ox = out.getContext('2d'); ox.drawImage(base, 0, 0);
+  ox.imageSmoothingQuality = 'high'; ox.translate(cx, cy); ox.rotate(ang); ox.drawImage(mx, -side / 2, -side / 2, side, side);
+  return await createImageBitmap(out);
+}
+async function ensureGF(seq) {
+  const base = S.aiOn ? S.aiBmp : S.bmpOrig, vis = !$('gfpRow').classList.contains('hidden');
+  const want = vis && $('gfp').checked && !!base, mix = +$('gfmix').value / 100;
+  if (!want) { S.gfNoFace = false; S.gfFailed = false; }
+  if (want) {
+    if (S.gfBase !== base || S.gfMix !== mix) {
+      S.gfNoFace = false; S.gfFailed = false;
+      $('busy').textContent = 'Starting face enhance...';
+      let bm = null;
+      if (await gfInit(t => { $('busy').textContent = t; })) {
+        try { bm = await gfEnhance(base, mix, t => { $('busy').textContent = t; }); S.gfNoFace = !bm; }
+        catch (e) { GF.state = 'failed'; GF.err = String(e && e.message || e); bm = null; }
+      }
+      if (seq !== S.seq) return;
+      S.gfBmp = bm; S.gfBase = base; S.gfMix = mix; S.gfId = (S.gfId || 0) + 1;
+      if (!bm && GF.state === 'failed') { S.gfFailed = true; $('gfp').checked = false; }
+    }
+    if (S.gfBmp) { if (S.bmp !== S.gfBmp) { S.bmp = S.gfBmp; S.maskCache = null; } S.gfOn = true; return; }
+  }
+  if (S.gfOn) { S.bmp = base; S.gfOn = false; S.maskCache = null; }
+}
 const PRESETS = {
   eid:      { w:826,  h:945,  dpi:600, name:'emirates-id-photo' },
   passport: { w:945,  h:1417, dpi:600, name:'uae-passport-photo' },
@@ -5820,7 +5906,7 @@ async function loadFile(file) {
     }).catch(() => null);
   }
   if (!bmp) { $('msg').textContent = 'That file could not be opened. Try a JPG or PNG.'; $('result').classList.add('show'); return; }
-  S.bmp = bmp; S.bmpOrig = bmp; S.aiBmp = null; S.aiOn = false; S.bmpId = (S.bmpId || 0) + 1; S.maskCache = null; S.rot = 0; S.tilt = 0; S.zoom = 1; S.ox = 0; S.oy = 0;
+  S.bmp = bmp; S.bmpOrig = bmp; S.aiBmp = null; S.aiOn = false; S.gfBmp = null; S.gfBase = null; S.gfOn = false; S.gfNoFace = false; S.bmpId = (S.bmpId || 0) + 1; S.maskCache = null; S.rot = 0; S.tilt = 0; S.zoom = 1; S.ox = 0; S.oy = 0;
   $('zoom').value = 1; $('zv').textContent = '1.00×'; $('tilt').value = 0; $('tlv').textContent = '0.0\u00b0';
   $('empty').classList.add('hidden');
   $('controls').classList.remove('hidden');
@@ -5934,6 +6020,10 @@ $('aires').addEventListener('change', () => { S.aiFailed = false; try { localSto
 try { if (localStorage.getItem('idphoto-aires') === '0') $('aires').checked = false; } catch (e) {}
 if (location.protocol.indexOf('http') === 0) (async () => { try { if (window.caches && await caches.match('models/sr_x4v3.onnx')) return true; } catch (e) {} const r = await fetch('models/sr_x4v3.onnx', { method: 'HEAD' }); return r.ok; })().then(ok => { if (ok) $('aiRow').classList.remove('hidden'); else $('aires').checked = false; }).catch(() => { $('aires').checked = false; });
 else $('aires').checked = false;
+if (location.protocol.indexOf('http') === 0) $('gfpRow').classList.remove('hidden');
+$('gfp').addEventListener('change', () => { $('gfpBox').classList.toggle('hidden', !$('gfp').checked); renderView(); schedule(); });
+$('gfmix').addEventListener('input', () => { $('gfv').textContent = $('gfmix').value + '%'; });
+$('gfmix').addEventListener('change', schedule);
 $('deblur').addEventListener('change', schedule);
 $('sharp').addEventListener('input', e => { $('sv').textContent = e.target.value + '%'; schedule(); });
 $('whiten').addEventListener('change', e => { $('tolBox').classList.toggle('hidden', !e.target.checked); schedule(); });
@@ -6254,6 +6344,8 @@ async function build() {
   const t = target();
   await ensureAI(seq);
   if (seq !== S.seq) return;
+  await ensureGF(seq);
+  if (seq !== S.seq) return;
   renderView();
   const maxBytes = Math.max(20, parseInt($('maxkb').value) || 500) * 1024;
   const c = document.createElement('canvas');
@@ -6277,6 +6369,8 @@ async function build() {
   const trim = parseInt($('trim').value) / 100;
   S.extra = []; S.checkMatte = null;
   if (S.aiSkipped) S.extra.push({ lvl:'info', txt:'AI restore was skipped because this photo is already high resolution. It is meant for small or soft photos, and on a sharp photo it only makes the skin look painted.' });
+  if (S.gfNoFace) S.extra.push({ lvl:'info', txt:'Face enhance could not find a face in this photo, so it was left as it is.' });
+  if (S.gfFailed) S.extra.push({ lvl:'info', txt:'Face enhance could not run on this device (probably not enough memory), so your photo was left as it is.' });
   if (S.aiFailed) { S.extra.push({ lvl:'info', txt:'AI restore could not run on this device (probably not enough memory), so your original photo was used.' }); }
   let lightNotes = [];
   let mask = null;
@@ -6286,7 +6380,7 @@ async function build() {
     } else {
       $('busy').textContent = S.maskReady ? 'Updating...' : 'Loading the cut-out model (first time only)...';
       try {
-        const key = [S.bmpId, S.aiOn ? 1 : 0, S.rot, S.zoom.toFixed(3), S.tilt.toFixed(2), S.ox.toFixed(3), S.oy.toFixed(3), t.w, t.h].join('|');
+        const key = [S.bmpId, S.aiOn ? 1 : 0, S.gfOn ? 'g' + S.gfId : 0, S.rot, S.zoom.toFixed(3), S.tilt.toFixed(2), S.ox.toFixed(3), S.oy.toFixed(3), t.w, t.h].join('|');
         if (!S.maskCache || S.maskCache.key !== key) S.maskCache = { key, m: await personMask(c, t.w, t.h) };
         S.maskReady = true;
         mask = S.maskCache.m;
@@ -6573,7 +6667,7 @@ sizeView();
   const hide = () => { if (!box.classList.contains('hidden')) { box.classList.add('hidden'); clearInterval(timer); timer = null; } };
   new MutationObserver(() => {
     const t = (busy.textContent || '').trim();
-    if (/AI restore|detail|Loading the|Starting the|model/i.test(t)) show(t); else if (!t) hide();
+    if (/AI restore|detail|Loading the|Starting the|model|Enhancing|face enhance/i.test(t)) show(t); else if (!t) hide();
   }).observe(busy, { childList: true, characterData: true, subtree: true });
 })();
 </script>
