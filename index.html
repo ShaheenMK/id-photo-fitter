@@ -6468,6 +6468,19 @@ async function build() {
                   }
                 }
               }
+              // loose patches of wall the detailed model took for person: they sit well away from anything the person-finder agrees with, and the person-finder says "not a person" there
+              if (ba) {
+                const W = t.w, H = t.h, r1 = Math.max(4, Math.round(0.03 * W)), r2 = Math.round(r1 * 1.6);
+                const dil = (src, r) => {
+                  const tmp = new Uint8Array(W * H), out = new Uint8Array(W * H);
+                  for (let y = 0; y < H; y++) { let last = -1e9; const row = y * W; for (let x = 0; x < W; x++) { if (src[row + x]) last = x; if (x - last <= r) tmp[row + x] = 1; } last = 1e9; for (let x = W - 1; x >= 0; x--) { if (src[row + x]) last = x; if (last - x <= r) tmp[row + x] = 1; } }
+                  for (let x = 0; x < W; x++) { let last = -1e9; for (let y = 0; y < H; y++) { if (tmp[y * W + x]) last = y; if (y - last <= r) out[y * W + x] = 1; } last = 1e9; for (let y = H - 1; y >= 0; y--) { if (tmp[y * W + x]) last = y; if (last - y <= r) out[y * W + x] = 1; } }
+                  return out;
+                };
+                const core = new Uint8Array(W * H); for (let k = 0; k < W * H; k++) core[k] = mask[k] > 0.8 ? 1 : 0;
+                const d1 = dil(core, r1), d2 = dil(core, r2);
+                for (let k = 0; k < W * H; k++) if (mask[k] < 0.5 && !d1[k]) ba[k] *= d2[k] ? 0.15 : 0;
+              }
               S.bigCache = { key, a: ba };
             } catch (e) { BIG.state = 'failed'; BIG.err = String(e && e.message || e); S.bigCache = null; }
           }
