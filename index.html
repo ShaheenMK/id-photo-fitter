@@ -5721,8 +5721,8 @@ function softScore(bmp) {
   return n ? s2 / n - (s / n) * (s / n) : 999;
 }
 async function ensureAI(seq) {
-  if (S.bmpOrig && S.softFor !== S.bmpOrig) { try { S.soft = softScore(S.bmpOrig) < 60; } catch (e) { S.soft = false; } S.softFor = S.bmpOrig; }
-  const small = S.bmpOrig && (Math.max(S.bmpOrig.width, S.bmpOrig.height) <= 1100 || S.soft);
+  if (S.bmpOrig && S.softFor2 !== S.bmpOrig) { try { S.softLo = softScore(S.bmpOrig) < 60; } catch (e) { S.softLo = false; } S.softFor2 = S.bmpOrig; }
+  const small = S.bmpOrig && (Math.max(S.bmpOrig.width, S.bmpOrig.height) <= 1100 || S.softLo);
   S.aiSkipped = !!(S.bmpOrig && $('aires').checked && !$('aiRow').classList.contains('hidden') && !small);
   const want = $('aires').checked && !$('aiRow').classList.contains('hidden') && small;
   if (want && !S.aiOn) {
@@ -5827,7 +5827,11 @@ async function gfEnhance(bmp, mix, onStatus) {
 }
 async function ensureGF(seq) {
   const base = S.aiOn ? S.aiBmp : S.bmpOrig, vis = !$('gfpRow').classList.contains('hidden');
-  const want = vis && $('gfp').checked && !!base, mix = +$('gfmix').value / 100;
+  // the face model can bend a mouth or eyes that were already sharp, so it runs by itself only on soft photos; tick it again by hand to force it
+  if (S.bmpOrig && S.softFor !== S.bmpOrig) { try { S.soft = softScore(S.bmpOrig) < 100; } catch (e) { S.soft = false; } S.softFor = S.bmpOrig; }
+  const forced = S.gfManual === S.bmpOrig, skipSharp = vis && $('gfp').checked && !forced && !S.soft;
+  S.gfSharpSkip = skipSharp;
+  const want = vis && $('gfp').checked && !!base && !skipSharp, mix = +$('gfmix').value / 100;
   if (!want) { S.gfNoFace = false; S.gfFailed = false; }
   if (want) {
     if (S.gfBase !== base || S.gfMix !== mix) {
@@ -6073,7 +6077,7 @@ try {
 } catch (e) {}
 $('gfpBox').classList.toggle('hidden', !$('gfp').checked);
 setTimeout(() => { $('aires').checked = $('gfp').checked; }, 0);
-$('gfp').addEventListener('change', () => { $('aires').checked = $('gfp').checked; try { localStorage.setItem('idphoto-gfp', $('gfp').checked ? '1' : '0'); localStorage.removeItem('idphoto-gfp-fail'); } catch (e) {} $('gfpBox').classList.toggle('hidden', !$('gfp').checked); renderView(); schedule(); });
+$('gfp').addEventListener('change', () => { $('aires').checked = $('gfp').checked; if ($('gfp').checked) S.gfManual = S.bmpOrig; try { localStorage.setItem('idphoto-gfp', $('gfp').checked ? '1' : '0'); localStorage.removeItem('idphoto-gfp-fail'); } catch (e) {} $('gfpBox').classList.toggle('hidden', !$('gfp').checked); renderView(); schedule(); });
 $('gfmix').addEventListener('input', () => { $('gfv').textContent = $('gfmix').value + '%'; });
 $('gfmix').addEventListener('change', schedule);
 $('deblur').addEventListener('change', schedule);
@@ -6421,6 +6425,7 @@ async function build() {
   const trim = parseInt($('trim').value) / 100;
   S.extra = []; S.checkMatte = null;
   if (S.aiSkipped) S.extra.push({ lvl:'info', txt:'AI restore was skipped because this photo is already high resolution. It is meant for small or soft photos, and on a sharp photo it only makes the skin look painted.' });
+  if (S.gfSharpSkip) S.extra.push({ lvl:'info', txt:'This photo is already sharp, so AI enhance was skipped to keep the face exactly as it is. To run it anyway, untick AI enhance and tick it again.' });
   if (S.gfNoFace) S.extra.push({ lvl:'info', txt:'Face enhance could not find a face in this photo, so it was left as it is.' });
   if (S.gfFailed) S.extra.push({ lvl:'info', txt:'Face enhance could not run on this device (probably not enough memory), so your photo was left as it is.' });
   if (S.aiFailed) { S.extra.push({ lvl:'info', txt:'AI restore could not run on this device (probably not enough memory), so your original photo was used.' }); }

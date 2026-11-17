@@ -1,7 +1,7 @@
 // Offline cache for ID Photo Fitter.
 // Small app files: network first (so updates arrive immediately), cache as the offline fallback.
 // Big model files: cached once in their own cache that survives updates (so the ~90 MB is not downloaded again).
-const APP = 'idphoto-app-v24', MODELS = 'idphoto-models';
+const APP = 'idphoto-app-v25', MODELS = 'idphoto-models';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './icon-maskable-512.png'];
 // Adds the headers that let the browser run the cut-out model on several CPU cores (GitHub Pages cannot send them itself).
 const iso = res => {
