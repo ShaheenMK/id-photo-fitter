@@ -89,6 +89,7 @@ details ul{margin:10px 0 0;padding-left:18px;color:var(--muted);font-size:14px}
 details li{margin-bottom:5px}
 .priv{font-size:13px;color:var(--muted);text-align:center;margin-top:8px}
 .hidden{display:none!important}
+#aiRow{display:none!important}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0b7a5a">
@@ -194,12 +195,12 @@ details li{margin-bottom:5px}
         <div class="hint">Rebuilds a small or soft photo to look cleaner and sharper, then blends it with your original so the face stays true. Takes 10 to 40 seconds. If it looks too smooth, untick it or use hold-to-compare.</div>
       </div>
       <div id="gfpRow" class="hidden">
-        <label class="check"><input type="checkbox" id="gfp" checked> Enhance face with AI (sharper eyes, hair and skin)</label>
+        <label class="check"><input type="checkbox" id="gfp" checked> AI enhance (clearer face, hair and skin)</label>
         <div class="slide" id="gfpBox">
-          <div class="top"><span>Enhance strength</span><span id="gfv">60%</span></div>
-          <input id="gfmix" type="range" min="20" max="100" step="10" value="60">
+          <div class="top"><span>Enhance strength</span><span id="gfv">100%</span></div>
+          <input id="gfmix" type="range" min="20" max="100" step="10" value="100">
         </div>
-        <div class="hint">On by default. Downloads a 170 MB face model the first time you add a photo (then it is kept on your device) and takes a few seconds per photo. It adds fine detail the photo did not clearly show, so keep it at 60% or lower for ID photos so she still looks like herself.</div>
+        <div class="hint">On by default. It rebuilds the face and hair in sharp detail, and cleans up the whole photo first when it is small or blurry. The first photo downloads about 170 MB (kept on your device afterwards). It invents fine detail the photo did not clearly show, so lower the strength if she stops looking like herself.</div>
       </div>
       <label class="check"><input type="checkbox" id="hair" checked> Keep fine hair strands</label>
       <div class="hint">Works best against a plain wall. Turn it off if a halo of the old background shows.</div>
@@ -5707,8 +5708,21 @@ async function srRestore(bmp, mix, onStatus) {
   bx.globalAlpha = mix; bx.drawImage(ai, 0, 0); bx.globalAlpha = 1;
   return await createImageBitmap(big);
 }
+// how soft the photo is (variance of the Laplacian on the middle of a 640 px copy): blurry photos get the clean-up even when they are large
+function softScore(bmp) {
+  const k = Math.min(1, 640 / Math.max(bmp.width, bmp.height)), w = Math.max(8, Math.round(bmp.width * k)), hh = Math.max(8, Math.round(bmp.height * k));
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = hh;
+  const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0, w, hh);
+  const x0 = Math.floor(w * 0.2), x1 = Math.floor(w * 0.8), y0 = Math.floor(hh * 0.1), y1 = Math.floor(hh * 0.7), rw = x1 - x0, rh = y1 - y0;
+  const d = cx.getImageData(x0, y0, rw, rh).data, L = new Float32Array(rw * rh);
+  for (let i = 0; i < L.length; i++) L[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  let s = 0, s2 = 0, n = 0;
+  for (let y = 1; y < rh - 1; y++) for (let x = 1; x < rw - 1; x++) { const i = y * rw + x, v = 4 * L[i] - L[i - 1] - L[i + 1] - L[i - rw] - L[i + rw]; s += v; s2 += v * v; n++; }
+  return n ? s2 / n - (s / n) * (s / n) : 999;
+}
 async function ensureAI(seq) {
-  const small = S.bmpOrig && Math.max(S.bmpOrig.width, S.bmpOrig.height) <= 1100;
+  if (S.bmpOrig && S.softFor !== S.bmpOrig) { try { S.soft = softScore(S.bmpOrig) < 60; } catch (e) { S.soft = false; } S.softFor = S.bmpOrig; }
+  const small = S.bmpOrig && (Math.max(S.bmpOrig.width, S.bmpOrig.height) <= 1100 || S.soft);
   S.aiSkipped = !!(S.bmpOrig && $('aires').checked && !$('aiRow').classList.contains('hidden') && !small);
   const want = $('aires').checked && !$('aiRow').classList.contains('hidden') && small;
   if (want && !S.aiOn) {
@@ -6058,7 +6072,8 @@ try {
   if (localStorage.getItem('idphoto-gfp') === '0' || localStorage.getItem('idphoto-gfp-fail') === '1' || slow) $('gfp').checked = false;
 } catch (e) {}
 $('gfpBox').classList.toggle('hidden', !$('gfp').checked);
-$('gfp').addEventListener('change', () => { try { localStorage.setItem('idphoto-gfp', $('gfp').checked ? '1' : '0'); localStorage.removeItem('idphoto-gfp-fail'); } catch (e) {} $('gfpBox').classList.toggle('hidden', !$('gfp').checked); renderView(); schedule(); });
+setTimeout(() => { $('aires').checked = $('gfp').checked; }, 0);
+$('gfp').addEventListener('change', () => { $('aires').checked = $('gfp').checked; try { localStorage.setItem('idphoto-gfp', $('gfp').checked ? '1' : '0'); localStorage.removeItem('idphoto-gfp-fail'); } catch (e) {} $('gfpBox').classList.toggle('hidden', !$('gfp').checked); renderView(); schedule(); });
 $('gfmix').addEventListener('input', () => { $('gfv').textContent = $('gfmix').value + '%'; });
 $('gfmix').addEventListener('change', schedule);
 $('deblur').addEventListener('change', schedule);
