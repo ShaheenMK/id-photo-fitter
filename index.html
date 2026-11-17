@@ -194,12 +194,12 @@ details li{margin-bottom:5px}
         <div class="hint">Rebuilds a small or soft photo to look cleaner and sharper, then blends it with your original so the face stays true. Takes 10 to 40 seconds. If it looks too smooth, untick it or use hold-to-compare.</div>
       </div>
       <div id="gfpRow" class="hidden">
-        <label class="check"><input type="checkbox" id="gfp"> Enhance face with AI (sharper eyes, hair and skin)</label>
-        <div class="slide hidden" id="gfpBox">
+        <label class="check"><input type="checkbox" id="gfp" checked> Enhance face with AI (sharper eyes, hair and skin)</label>
+        <div class="slide" id="gfpBox">
           <div class="top"><span>Enhance strength</span><span id="gfv">60%</span></div>
           <input id="gfmix" type="range" min="20" max="100" step="10" value="60">
         </div>
-        <div class="hint">Optional. Downloads a 170 MB face model the first time (then it is kept on your device) and takes a few seconds per photo. It adds fine detail the photo did not clearly show, so keep it at 60% or lower for ID photos so she still looks like herself.</div>
+        <div class="hint">On by default. Downloads a 170 MB face model the first time you add a photo (then it is kept on your device) and takes a few seconds per photo. It adds fine detail the photo did not clearly show, so keep it at 60% or lower for ID photos so she still looks like herself.</div>
       </div>
       <label class="check"><input type="checkbox" id="hair" checked> Keep fine hair strands</label>
       <div class="hint">Works best against a plain wall. Turn it off if a halo of the old background shows.</div>
@@ -5795,7 +5795,7 @@ async function ensureGF(seq) {
       }
       if (seq !== S.seq) return;
       S.gfBmp = bm; S.gfBase = base; S.gfMix = mix; S.gfId = (S.gfId || 0) + 1;
-      if (!bm && GF.state === 'failed') { S.gfFailed = true; $('gfp').checked = false; }
+      if (!bm && GF.state === 'failed') { S.gfFailed = true; $('gfp').checked = false; $('gfpBox').classList.add('hidden'); try { localStorage.setItem('idphoto-gfp-fail', '1'); } catch (e) {} }
     }
     if (S.gfBmp) { if (S.bmp !== S.gfBmp) { S.bmp = S.gfBmp; S.maskCache = null; } S.gfOn = true; return; }
   }
@@ -6021,7 +6021,13 @@ try { if (localStorage.getItem('idphoto-aires') === '0') $('aires').checked = fa
 if (location.protocol.indexOf('http') === 0) (async () => { try { if (window.caches && await caches.match('models/sr_x4v3.onnx')) return true; } catch (e) {} const r = await fetch('models/sr_x4v3.onnx', { method: 'HEAD' }); return r.ok; })().then(ok => { if (ok) $('aiRow').classList.remove('hidden'); else $('aires').checked = false; }).catch(() => { $('aires').checked = false; });
 else $('aires').checked = false;
 if (location.protocol.indexOf('http') === 0) $('gfpRow').classList.remove('hidden');
-$('gfp').addEventListener('change', () => { $('gfpBox').classList.toggle('hidden', !$('gfp').checked); renderView(); schedule(); });
+// automatic by default, but not on a data-saver / slow connection (170 MB first download), after the user turned it off, or on a device where it failed
+try {
+  const cn = navigator.connection || {}, slow = cn.saveData || /(^|-)[23]g$/.test(cn.effectiveType || '');
+  if (localStorage.getItem('idphoto-gfp') === '0' || localStorage.getItem('idphoto-gfp-fail') === '1' || slow) $('gfp').checked = false;
+} catch (e) {}
+$('gfpBox').classList.toggle('hidden', !$('gfp').checked);
+$('gfp').addEventListener('change', () => { try { localStorage.setItem('idphoto-gfp', $('gfp').checked ? '1' : '0'); localStorage.removeItem('idphoto-gfp-fail'); } catch (e) {} $('gfpBox').classList.toggle('hidden', !$('gfp').checked); renderView(); schedule(); });
 $('gfmix').addEventListener('input', () => { $('gfv').textContent = $('gfmix').value + '%'; });
 $('gfmix').addEventListener('change', schedule);
 $('deblur').addEventListener('change', schedule);
