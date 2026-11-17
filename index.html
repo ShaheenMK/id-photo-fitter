@@ -95,7 +95,14 @@ details li{margin-bottom:5px}
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<script>if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').catch(function () {});</script>
+<script>if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) navigator.serviceWorker.register('sw.js').then(function () {
+  // the first time, the service worker takes over after the page has loaded: reload once so the multi-core cut-out can start
+  if (!window.crossOriginIsolated) navigator.serviceWorker.ready.then(function () {
+    try { if (sessionStorage.getItem('iso-reload')) return; sessionStorage.setItem('iso-reload', '1'); } catch (e) { return; }
+    if (navigator.serviceWorker.controller) location.reload();
+    else navigator.serviceWorker.addEventListener('controllerchange', function () { location.reload(); });
+  });
+}).catch(function () {});</script>
 </head>
 <body>
 <main>
@@ -5562,7 +5569,7 @@ async function bigInit(onStatus) {
       if (location.protocol.indexOf('http') !== 0) throw new Error('not served over http');
       if (!window.ort) await bigLoadScript('ort/ort.wasm.min.js');
       ort.env.wasm.wasmPaths = new URL('ort/', location.href).href;
-      ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = true;
+      ort.env.wasm.numThreads = window.crossOriginIsolated ? Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)) : 1; ort.env.wasm.proxy = true;
       const resp = await fetch('models/isnet_medium.onnx');
       if (!resp.ok) throw new Error('model missing');
       const total = +resp.headers.get('content-length') || 88188479, parts = []; let got = 0;
@@ -5621,7 +5628,7 @@ async function srInit(onStatus) {
     try {
       if (location.protocol.indexOf('http') !== 0) throw new Error('not served over http');
       if (!window.ort) await bigLoadScript('ort/ort.wasm.min.js');
-      ort.env.wasm.wasmPaths = new URL('ort/', location.href).href; ort.env.wasm.numThreads = 1; ort.env.wasm.proxy = true;
+      ort.env.wasm.wasmPaths = new URL('ort/', location.href).href; ort.env.wasm.numThreads = window.crossOriginIsolated ? Math.max(1, Math.min(4, navigator.hardwareConcurrency || 2)) : 1; ort.env.wasm.proxy = true;
       onStatus && onStatus('Loading the AI restore model (first time only)...');
       const resp = await fetch('models/sr_x4v3.onnx'); if (!resp.ok) throw new Error('model missing');
       SR.sess = await ort.InferenceSession.create(await resp.arrayBuffer(), { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
